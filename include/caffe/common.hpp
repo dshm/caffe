@@ -195,6 +195,9 @@ class Caffe {
     MPI_Comm intra_comm;
     MPI_Comm_split(MPI_COMM_WORLD, color, key, &intra_comm);
   }
+
+  static void mpi_init();
+  static void mpi_finalize();
 #endif
 
 #ifdef WITH_PYTHON_LAYER

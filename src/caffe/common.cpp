@@ -67,12 +67,36 @@ void GlobalInit(int* pargc, char*** pargv) {
 }
 
 void GlobalFinalize(){
-  //Add something here
-
-  #ifdef USE_MPI
+#ifdef USE_MPI
   MPI_Finalize();
-  #endif
+#endif
 }
+
+#ifdef USE_MPI
+void Caffe::mpi_init() {
+  Caffe::MPI_build_rank();
+
+  if (Caffe::MPI_all_rank() > 1) {
+    Caffe::set_parallel_mode(Caffe::MPI);
+    LOG(INFO)<<"Running parallel training with MPI support!";
+  }else{
+    Caffe::set_parallel_mode(Caffe::NO);
+    LOG(INFO)<<"You are running caffe compiled with MPI support. Now it's running in non-parallel model";
+  }
+
+  //disable slave processes from logging to stderr
+  //also enable logging only events above ERROR level to logfile.
+  if (Caffe::MPI_my_rank() != 0){
+    FLAGS_logtostderr = false;
+    FLAGS_minloglevel = 2;
+  }
+}
+
+void Caffe::mpi_finalize() {
+  MPI_Finalize();
+#endif
+}
+
 
 #ifdef CPU_ONLY  // CPU-only Caffe.
 
