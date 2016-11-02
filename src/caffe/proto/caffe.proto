@@ -367,6 +367,7 @@ message LayerParameter {
   optional BiasParameter bias_param = 161;
   optional BatchReductionParameter batch_reduction_param = 162;
   optional RandomSamplingSoftmaxLossParameter rss_loss_param = 8266713;
+  optional HybridSoftmaxLossParameter hybrid_softmax_loss_param = 8266714;
 }
 
 // Message that stores parameters used to apply transformation
@@ -828,6 +829,13 @@ message PythonParameter {
 message RandomSamplingSoftmaxLossParameter {
   optional int32 random_sampling_num = 1 [default = 100];
   optional string random_sampling_policy = 2 [default = "random"];
+}
+
+message HybridSoftmaxLossParameter {
+  required int32 num_classes = 1;
+  optional int32 unlabeled_pool_size = 2 [default = 1000];
+  optional float unlabeled_score_weight = 3 [default = 1.0];
+  optional FillerParameter weight_filler = 4; // The filler for the weight
 }
 
 // Message that stores parameters used by ReductionLayer
