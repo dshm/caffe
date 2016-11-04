@@ -947,6 +947,8 @@ class HybridSoftmaxLossLayer : public LossLayer<Dtype> {
   virtual void Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
 
+  virtual void RandomSample(const vector<Blob<Dtype>*>& bottom);
+
   /// Read the normalization mode parameter and compute the normalizer based
   /// on the blob size.  If normalization_mode is VALID, the count of valid
   /// outputs will be read from valid_count, unless it is -1 in which case
@@ -961,14 +963,21 @@ class HybridSoftmaxLossLayer : public LossLayer<Dtype> {
   /// How to normalize the output loss.
   LossParameter_NormalizationMode normalization_;
 
+  int num_;  // original number of samples in a minibatch
+  int dim_;  // original feature dimension of each sample
+
+  // compute the score of labeled classes and unlabeled pool samples
   Blob<Dtype> fc_bottom_;
+  Blob<Dtype> fc_top_;
+
+  // sample a subset of labeled classes, combining with unlabeled pool
+  // to compute probability
   Blob<Dtype> softmax_bottom_;
   Blob<Dtype> softmax_top_;
 
-  int num_;
-  int dim_;
-
+  // number of labeled classes
   int num_classes_;
+  // for unlabeled pool
   int ul_pool_size_;
   int ul_pool_tail_;
   bool ul_pool_full_;
@@ -977,6 +986,13 @@ class HybridSoftmaxLossLayer : public LossLayer<Dtype> {
   vector<int> lb_indices_;
   // mapping from minibatch index to pool index
   vector<pair<int, int> > ul_indices_;
+  // random sampling
+  int num_sampling_;
+  std::string sampling_policy_;
+  // for generating random indices
+  vector<int> index_vec_;
+  // for storing sampled K indices for each data sample
+  vector<vector<int> > sampled_index_;
 };
 
 }  // namespace caffe

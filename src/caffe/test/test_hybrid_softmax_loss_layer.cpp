@@ -74,6 +74,8 @@ TYPED_TEST(HybridSoftmaxLossLayerTest, TestGradient) {
   loss_param->set_unlabeled_pool_size(4);
   loss_param->mutable_weight_filler()->set_type("gaussian");
   loss_param->mutable_weight_filler()->set_std(0.001);
+  loss_param->set_random_sampling_num(2);
+  loss_param->set_random_sampling_policy("random");
 
   HybridSoftmaxLossLayer<TypeParam> layer(layer_param);
   GradientChecker<TypeParam> checker(1e-2, 1e-2, 1701);
@@ -92,6 +94,8 @@ TYPED_TEST(HybridSoftmaxLossLayerTest, TestUnlabeledPool) {
   loss_param->set_unlabeled_pool_size(5);
   loss_param->mutable_weight_filler()->set_type("gaussian");
   loss_param->mutable_weight_filler()->set_std(0.001);
+  loss_param->set_random_sampling_num(2);
+  loss_param->set_random_sampling_policy("random");
 
   scoped_ptr<HybridSoftmaxLossLayer<TypeParam> > layer(
       new HybridSoftmaxLossLayer<TypeParam>(layer_param));

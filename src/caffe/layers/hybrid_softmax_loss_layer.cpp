@@ -3,6 +3,7 @@
 #include <utility>
 #include <cfloat>
 #include <vector>
+#include <numeric>
 
 #include "caffe/filler.hpp"
 #include "caffe/loss_layers.hpp"
@@ -22,9 +23,22 @@ void HybridSoftmaxLossLayer<Dtype>::LayerSetUp(
   ul_score_weight_ = this->layer_param_.hybrid_softmax_loss_param().unlabeled_score_weight();
   ul_pool_tail_ = 0;
   ul_pool_full_ = false;
+  num_sampling_ = this->layer_param_.hybrid_softmax_loss_param().random_sampling_num();
+  sampling_policy_ = this->layer_param_.hybrid_softmax_loss_param().random_sampling_policy();
+  if (sampling_policy_ != "random") {
+    LOG(FATAL) << "Cannot recognize sampling policy " << sampling_policy_;
+  }
+  CHECK_LE(num_sampling_, num_classes_)
+      << "Number of classes to be sampled should be small than "
+      << "total number of classes " << num_classes_;
 
   num_ = bottom[0]->shape(0);
   dim_ = bottom[0]->count(1);
+
+  // prefill the index for shuffling
+  index_vec_.resize(num_classes_);
+  for (int i = 0; i < num_classes_; ++i)
+    index_vec_[i] = i;
 
   if (this->blobs_.size() > 0) {
     CHECK_EQ(this->blobs_[0]->shape(0), num_classes_ + ul_pool_size_);
@@ -52,7 +66,7 @@ void HybridSoftmaxLossLayer<Dtype>::LayerSetUp(
   softmax_top_vec_.push_back(&softmax_top_);
   vector<int> softmax_bottom_shape(2);
   softmax_bottom_shape[0] = num_;
-  softmax_bottom_shape[1] = num_classes_ + ul_pool_size_;
+  softmax_bottom_shape[1] = num_sampling_ + ul_pool_size_;
   softmax_bottom_.Reshape(softmax_bottom_shape);
   softmax_layer_->SetUp(softmax_bottom_vec_, softmax_top_vec_);
 
@@ -79,6 +93,10 @@ void HybridSoftmaxLossLayer<Dtype>::Reshape(
     << "Number of input labels must match input features.";
 
   fc_bottom_.ReshapeLike(*(bottom[0]));
+  vector<int> shape(2);
+  shape[0] = num_;
+  shape[1] = num_classes_ + ul_pool_size_;
+  fc_top_.Reshape(shape);
   // We do not reshape the softmax layer here but will do it in the forward
 }
 
@@ -116,21 +134,19 @@ void HybridSoftmaxLossLayer<Dtype>::Forward_cpu(
       }
     }
   }
-  // compute scores for softmax input
+  // compute fc output scores
   const int M = static_cast<int>(lb_indices_.size());
-  const int N = num_classes_ + (ul_pool_full_ ? ul_pool_size_ : ul_pool_tail_);
+  const int N1 = num_classes_ + ul_pool_size_;
   const int K = dim_;
   if (M == 0) {
     top[0]->mutable_cpu_data()[0] = 0;
     return;
   }
-  vector<int> shape(2);
-  shape[0] = M;
-  shape[1] = N;
-  softmax_bottom_.Reshape(shape);
-  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasTrans, M, N, K,
+  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasTrans, M, N1, K,
       (Dtype)1., fc_bottom_.cpu_data(), this->blobs_[0]->cpu_data(),
-      (Dtype)0., softmax_bottom_.mutable_cpu_data());
+      (Dtype)0., fc_top_.mutable_cpu_data());
+  // random sample a subset of labeled classes for each data sample
+  RandomSample(bottom);
   // compute softmax probability
   softmax_layer_->Reshape(softmax_bottom_vec_, softmax_top_vec_);
   softmax_layer_->Forward(softmax_bottom_vec_, softmax_top_vec_);
@@ -149,13 +165,11 @@ void HybridSoftmaxLossLayer<Dtype>::Forward_cpu(
   */
   // compute nll loss
   const Dtype* prob = softmax_top_.cpu_data();
+  const int N2 = softmax_top_.shape(1);
   Dtype loss = 0;
   for (int i = 0; i < M; ++i) {
-    const int minibatch_index = lb_indices_[i];
-    const int label_value = static_cast<int>(label[minibatch_index]);
-    CHECK_GE(label_value, 0);
-    CHECK_LT(label_value, num_classes_);
-    loss -= log(std::max(prob[i * N + label_value], (Dtype)FLT_MIN));
+    // after random sampling, the target label is 0 for all the data samples
+    loss -= log(std::max(prob[i * N2], (Dtype)FLT_MIN));
   }
   top[0]->mutable_cpu_data()[0] = loss / std::max(1, M);
 }
@@ -165,29 +179,36 @@ void HybridSoftmaxLossLayer<Dtype>::Backward_cpu(
     const vector<Blob<Dtype>*>& top, const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
   const Dtype* prob = softmax_top_.cpu_data();
-  const Dtype* label = bottom[1]->cpu_data();
   Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
   caffe_set(bottom[0]->count(), (Dtype)0., bottom_diff);
   // propagate through softmax layer
   const int M = static_cast<int>(lb_indices_.size());
-  const int N = num_classes_ + (ul_pool_full_ ? ul_pool_size_ : ul_pool_tail_);
-  const int K = dim_;
+  const int K = num_sampling_;
   if (M == 0) { return; }
   Dtype* softmax_bottom_diff = softmax_bottom_.mutable_cpu_diff();
   caffe_copy(softmax_top_.count(), prob, softmax_bottom_diff);
-  for (int i = 0; i < M; ++i) {
-    const int minibatch_index = lb_indices_[i];
-    const int label_value = static_cast<int>(label[minibatch_index]);
-    softmax_bottom_diff[i * N + label_value] -= 1;
-  }
+  const int N2 = softmax_bottom_.shape(1);
+  for (int i = 0; i < M; ++i)
+    softmax_bottom_diff[i * N2] -= 1;
   const Dtype loss_weight = top[0]->cpu_diff()[0];
   caffe_scal(softmax_bottom_.count(), loss_weight / M, softmax_bottom_diff);
+  // copy the diff from softmax_bottom to corresponding fc_top
+  const int N1 = fc_top_.shape(1);
+  Dtype* fc_top_diff = fc_top_.mutable_cpu_diff();
+  caffe_set(fc_top_.count(), (Dtype)0, fc_top_diff);
+  for (int i = 0; i < M; ++i) {
+    const vector<int>& s = sampled_index_[i];
+    for (int j = 0; j < s.size(); ++j)
+      fc_top_diff[i*N1 + s[j]] = softmax_bottom_diff[i*N2 + j];
+    caffe_copy(N2 - K, softmax_bottom_diff + i*N2 + K,
+               fc_top_diff + i*N1 + num_classes_);
+  }
 
   if (this->param_propagate_down_[0] ||
         (propagate_down[0] && !ul_indices_.empty())) {
     // propagate to weight for labeled classes
-    caffe_cpu_gemm<Dtype>(CblasTrans, CblasNoTrans, N, K, M,
-        (Dtype)1., softmax_bottom_diff, fc_bottom_.cpu_data(),
+    caffe_cpu_gemm<Dtype>(CblasTrans, CblasNoTrans, N1, dim_, M,
+        (Dtype)1., fc_top_.cpu_diff(), fc_bottom_.cpu_data(),
         (Dtype)1., this->blobs_[0]->mutable_cpu_diff());
     // copy corresponding diff to the unlabeled samples in this minibatch
     const Dtype* w_diff = this->blobs_[0]->cpu_diff();
@@ -213,8 +234,8 @@ void HybridSoftmaxLossLayer<Dtype>::Backward_cpu(
   }
   if (propagate_down[0]) {
     // propagate to labeled samples
-    caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M, K, N,
-        (Dtype)1., softmax_bottom_.cpu_diff(), this->blobs_[0]->cpu_data(),
+    caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, M, dim_, N1,
+        (Dtype)1., fc_top_.cpu_diff(), this->blobs_[0]->cpu_data(),
         (Dtype)0., fc_bottom_.mutable_cpu_diff());
     // copy back to minibatch
     const Dtype* fc_bottom_diff = fc_bottom_.cpu_diff();
@@ -223,6 +244,48 @@ void HybridSoftmaxLossLayer<Dtype>::Backward_cpu(
       caffe_copy(dim_, fc_bottom_diff + i * dim_,
                  bottom_diff + minibatch_index * dim_);
     }
+  }
+}
+
+template <typename Dtype>
+void HybridSoftmaxLossLayer<Dtype>::RandomSample(
+    const vector<Blob<Dtype>*>& bottom) {
+  const Dtype* label = bottom[1]->cpu_data();
+  const int M = lb_indices_.size();
+  const int K = num_sampling_;
+  // generate the sampled index
+  sampled_index_.resize(M, vector<int>(K, 0));
+  for (int i = 0; i < M; ++i) {
+    const int minibatch_index = lb_indices_[i];
+    const int label_value = static_cast<int>(label[minibatch_index]);
+    CHECK_GE(label_value, 0);
+    CHECK_LT(label_value, num_classes_);
+    // put the ground truth class to the first
+    sampled_index_[i][0] = label_value;
+    // randomly choose K - 1 other classes
+    shuffle(index_vec_.begin(), index_vec_.end());
+    for (int j = 0, k = 1; j < index_vec_.size() && k < K; ++j) {
+      if (index_vec_[j] == label_value) continue;
+      sampled_index_[i][k++] = index_vec_[j];
+    }
+  }
+  // copy scores from fc_top to softmax_bottom
+  const int N1 = fc_top_.shape(1);
+  const int N2 = K + (ul_pool_full_ ? ul_pool_size_ : ul_pool_tail_);
+  vector<int> shape(2);
+  shape[0] = M;
+  shape[1] = N2;
+  softmax_bottom_.Reshape(shape);
+  const Dtype* fc_top = fc_top_.cpu_data();
+  Dtype* sm_bottom = softmax_bottom_.mutable_cpu_data();
+  for (int i = 0; i < M; ++i) {
+    const vector<int>& s = sampled_index_[i];
+    // labeled class scores
+    for (int j = 0; j < s.size(); ++j)
+      sm_bottom[i * N2 + j] = fc_top[i * N1 + s[j]];
+    // unlabeled class scores
+    caffe_copy(N2 - K, fc_top + i*N1 + num_classes_,
+               sm_bottom + i*N2 + K);
   }
 }
 

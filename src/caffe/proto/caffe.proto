@@ -836,6 +836,8 @@ message HybridSoftmaxLossParameter {
   optional int32 unlabeled_pool_size = 2 [default = 1000];
   optional float unlabeled_score_weight = 3 [default = 1.0];
   optional FillerParameter weight_filler = 4; // The filler for the weight
+  optional int32 random_sampling_num = 5 [default = 100];
+  optional string random_sampling_policy = 6 [default = "random"];
 }
 
 // Message that stores parameters used by ReductionLayer
