@@ -368,6 +368,9 @@ message LayerParameter {
   optional BatchReductionParameter batch_reduction_param = 162;
   optional RandomSamplingSoftmaxLossParameter rss_loss_param = 8266713;
   optional HybridSoftmaxLossParameter hybrid_softmax_loss_param = 8266714;
+  optional LabeledMatchingParameter labeled_matching_param = 8266715;
+  optional UnlabeledMatchingParameter unlabeled_matching_param = 8266716;
+  optional TargetSamplingParameter target_sampling_param = 8266717;
 }
 
 // Message that stores parameters used to apply transformation
@@ -838,6 +841,19 @@ message HybridSoftmaxLossParameter {
   optional FillerParameter weight_filler = 4; // The filler for the weight
   optional int32 random_sampling_num = 5 [default = 100];
   optional string random_sampling_policy = 6 [default = "random"];
+}
+
+message LabeledMatchingParameter {
+  required int32 num_classes = 1;
+  optional float momentum = 2 [default = 0.5];
+}
+
+message UnlabeledMatchingParameter {
+  optional int32 queue_size = 1 [default = 1000];
+}
+
+message TargetSamplingParameter {
+  optional int32 num_sampling = 1 [default = 100];
 }
 
 // Message that stores parameters used by ReductionLayer
