@@ -36,6 +36,8 @@ void UnlabeledMatchingLayer<Dtype>::Backward_gpu(
         (Dtype)0., bottom[0]->mutable_gpu_diff());
   }
   if (this->param_propagate_down_[0]) {
+    // Make sure the bottom diff is already computed
+    CUDA_CHECK(cudaDeviceSynchronize());
     const Dtype* bottom_data = bottom[0]->gpu_data();
     const Dtype* bottom_label = bottom[1]->cpu_data();
     Dtype* weight = this->blobs_[0]->mutable_gpu_data();

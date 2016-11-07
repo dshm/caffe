@@ -45,6 +45,8 @@ void LabeledMatchingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   CHECK_EQ(this->param_propagate_down_[0], this->param_propagate_down_[1])
       << "Instance matrix and timestamp vector should be both updated or not";
   if (this->param_propagate_down_[0]) {
+    // Make sure the bottom diff is already computed
+    CUDA_CHECK(cudaDeviceSynchronize());
     const Dtype* bottom_data = bottom[0]->gpu_data();
     const Dtype* bottom_label = bottom[1]->cpu_data();
     Dtype* weight = this->blobs_[0]->mutable_gpu_data();
