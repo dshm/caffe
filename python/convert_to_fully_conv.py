@@ -2,8 +2,8 @@ import numpy as np
 import os
 import os.path as osp
 import sys
-import google.protobuf as pb
 from argparse import ArgumentParser
+from google.protobuf import text_format
 
 pycaffe_dir = osp.dirname(__file__)
 if osp.join(pycaffe_dir) not in sys.path:
@@ -18,7 +18,7 @@ def main(args):
     # make fully conv prototxt
     fc_proto = caffe_pb2.NetParameter()
     with open(args.model, 'r') as f:
-        pb.text_format.Parse(f.read(), fc_proto)
+        text_format.Parse(f.read(), fc_proto)
     layers = []
     fc_to_conv_dic = {}
     for layer in fc_proto.layer:
@@ -47,7 +47,7 @@ def main(args):
         name, ext = osp.splitext(args.model)
         args.save_model = name + '_fully_conv' + ext
     with open(args.save_model, 'w') as f:
-        f.write(pb.text_format.MessageToString(conv_proto))
+        f.write(text_format.MessageToString(conv_proto))
     # make fully conv parameters
     conv_net = caffe.Net(args.save_model, args.weights, caffe.TEST)
     for fc, conv in fc_to_conv_dic.iteritems():

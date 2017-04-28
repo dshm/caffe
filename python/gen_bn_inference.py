@@ -2,8 +2,8 @@ import numpy as np
 import sys
 import os
 import os.path as osp
-import google.protobuf as pb
 from argparse import ArgumentParser
+from google.protobuf import text_format
 
 import caffe
 
@@ -18,7 +18,7 @@ def main(args):
         args.output_weights = file_name + '_inference.caffemodel'
     with open(args.model) as f:
         model = caffe.proto.caffe_pb2.NetParameter()
-        pb.text_format.Parse(f.read(), model)
+        text_format.Parse(f.read(), model)
 
     # Get the BN layers to be absorbed
     to_be_absorbed = []
@@ -64,7 +64,7 @@ def main(args):
     del(output_model.layer[:])
     output_model.layer.extend(output_model_layers)
     with open(args.output_model, 'w') as f:
-        f.write(pb.text_format.MessageToString(output_model))
+        f.write(text_format.MessageToString(output_model))
 
     # Absorb the BN parameters
     weights = caffe.Net(args.model, args.weights, caffe.TEST)
