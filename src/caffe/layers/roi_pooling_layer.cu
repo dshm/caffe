@@ -79,6 +79,7 @@ __global__ void ROIPoolForward(const int nthreads, const Dtype* bottom_data,
 template <typename Dtype>
 void ROIPoolingLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+
   const Dtype* bottom_data = bottom[0]->gpu_data();
   const Dtype* bottom_rois = bottom[1]->gpu_data();
   Dtype* top_data = top[0]->mutable_gpu_data();
@@ -89,6 +90,7 @@ void ROIPoolingLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       count, bottom_data, spatial_scale_, channels_, height_, width_,
       pooled_height_, pooled_width_, bottom_rois, top_data, argmax_data);
   CUDA_POST_KERNEL_CHECK;
+
 }
 
 template <typename Dtype>

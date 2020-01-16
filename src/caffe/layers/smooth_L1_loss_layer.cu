@@ -83,6 +83,7 @@ void SmoothL1LossLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   int count = diff_.count();
   SmoothL1Backward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
       count, diff_.gpu_data(), diff_.mutable_gpu_data(), sigma2_);
+ 
   CUDA_POST_KERNEL_CHECK;
   for (int i = 0; i < 2; ++i) {
     if (propagate_down[i]) {

@@ -496,7 +496,8 @@ void Solver<Dtype>::Test(const int test_net_id) {
 template <typename Dtype>
 void Solver<Dtype>::Snapshot() {
 #ifdef USE_MPI
-  if (Caffe::MPI_my_rank() != 0) return;
+    LOG(ERROR) << "============snapshot MPI branch!=============="<<Caffe::MPI_my_rank();
+ // if (Caffe::MPI_my_rank() != 0) return;
 #endif
   NetParameter net_param;
   // For intermediate results, we will also dump the gradient values.
